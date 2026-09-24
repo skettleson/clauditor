@@ -4,7 +4,7 @@ import json
 from collections import Counter
 from typing import Literal
 
-from .model import Finding, SessionAudit, Stance, Verdict
+from .model import Finding, Policy, SessionAudit, Stance, Verdict
 
 ReportFormat = Literal["text", "markdown", "json"]
 
@@ -22,6 +22,14 @@ def render(audits: list[SessionAudit], fmt: ReportFormat = "text", show_aligned:
             return "\n".join(["# clauditor report", "", *(_markdown(a) for a in shown), _footer(audits)])
         case _:
             return "\n".join([*(_text(a) for a in shown), _footer(audits)])
+
+
+def render_roles(policy: Policy) -> str:
+    roles = {
+        role.name: {"description": role.description, "expected": sorted(role.expected), "forbidden": sorted(role.forbidden), "drift_threshold": role.drift_threshold}
+        for role in policy.roles.values()
+    }
+    return json.dumps({"default_role": policy.default_role, "roles": roles, "users": policy.users}, indent=2)
 
 
 def _text(audit: SessionAudit) -> str:

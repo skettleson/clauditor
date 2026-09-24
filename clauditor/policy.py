@@ -21,10 +21,11 @@ def load_policy(capabilities_file: Path, roles_file: Path) -> Policy:
     roles = _parse_roles(raw_roles, known, roles_file)
     assignments = tuple(Assignment(entry["project"], entry["role"]) for entry in raw_roles.get("assign", []))
     default_role = raw_roles.get("default_role")
-    for role_name in [a.role_name for a in assignments] + ([default_role] if default_role else []):
+    users = {identity.lower(): role for identity, role in raw_roles.get("users", {}).items()}
+    for role_name in [a.role_name for a in assignments] + list(users.values()) + ([default_role] if default_role else []):
         if role_name not in roles:
-            raise PolicyError(f"{roles_file}: assignment names unknown role {role_name!r}")
-    return Policy(capabilities, roles, assignments, default_role)
+            raise PolicyError(f"{roles_file}: assignment or user names unknown role {role_name!r}")
+    return Policy(capabilities, roles, assignments, default_role, users)
 
 
 def _read_toml(path: Path) -> dict:

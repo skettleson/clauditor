@@ -41,8 +41,12 @@ SUBJECT_FIELD_BY_TOOL = {
 }
 
 
+def session_transcripts(root: Path = DEFAULT_PROJECTS_ROOT) -> list[Path]:
+    return sorted(root.glob("*/*.jsonl"))
+
+
 def load_sessions(root: Path = DEFAULT_PROJECTS_ROOT, only: str | None = None) -> Iterator[Session]:
-    for transcript in sorted(root.glob("*/*.jsonl")):
+    for transcript in session_transcripts(root):
         session = load_session(transcript)
         if only is None or session.session_id.startswith(only):
             yield session
@@ -64,7 +68,7 @@ def load_session(transcript: Path) -> Session:
         )
     activities.sort(key=lambda a: (a.evidence.timestamp, str(a.evidence.transcript), a.evidence.line_no))
     return Session(
-        session_id=_first_field(events, "sessionId") or transcript.stem,
+        session_id=transcript.stem,
         project_cwd=_first_field(events, "cwd") or "",
         title=_last_title(events),
         started_at=_first_field(events, "timestamp") or "",
