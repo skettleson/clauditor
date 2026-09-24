@@ -2,7 +2,7 @@
 description = "Port or host discovery against network targets."
 severity = "high"
 match = [
-  { kinds = ["shell"], regex = '\b(nmap|masscan|rustscan|zmap|nc\s+-z)\b' },
+  { kinds = ["shell"], regex = '{cmd}(nmap|masscan|rustscan|zmap)\b|{cmd}(nc|ncat)\s+(-\w*\s+)*-\w*z' },
   { kinds = ["prompt"], regex = '\b(port ?scan|scan (the|their) network)\b' },
 ]
 
@@ -10,14 +10,14 @@ match = [
 description = "Automated attack tooling against web applications."
 severity = "high"
 match = [
-  { kinds = ["shell"], regex = '\b(sqlmap|nikto|wpscan|gobuster|ffuf|dirb|burpsuite)\b' },
+  { kinds = ["shell"], regex = '{cmd}(sqlmap|nikto|wpscan|gobuster|ffuf|dirb|burpsuite)\b' },
 ]
 
 [credential-attack]
 description = "Brute forcing or cracking credentials."
 severity = "high"
 match = [
-  { kinds = ["shell"], regex = '\b(hydra|medusa|john|hashcat|crackmapexec)\b' },
+  { kinds = ["shell"], regex = '{cmd}(hydra|medusa|john|hashcat|crackmapexec|netexec)\b' },
   { kinds = ["file_read", "shell"], regex = '(rockyou\.txt|/etc/shadow)' },
 ]
 
@@ -25,7 +25,7 @@ match = [
 description = "Writing or running exploit payloads."
 severity = "high"
 match = [
-  { kinds = ["shell"], regex = '\b(msfconsole|msfvenom|searchsploit)\b' },
+  { kinds = ["shell"], regex = '{cmd}(msfconsole|msfvenom|searchsploit)\b' },
   { kinds = ["file_write"], regex = '(exploit|payload|shellcode)[^/]*\.(py|c|rb)$' },
 ]
 
@@ -33,7 +33,7 @@ match = [
 description = "Attempts to gain elevated privileges."
 severity = "medium"
 match = [
-  { kinds = ["shell"], regex = '\b(linpeas|sudo\s+-l|chmod\s+[u+]*s\b)' },
+  { kinds = ["shell"], regex = '{cmd}(linpeas(\.sh)?|sudo\s+-l\b)|chmod\s+[ug]?\+s\b' },
 ]
 
 [edit-source]
@@ -44,17 +44,17 @@ match = [ { kinds = ["file_write"], regex = '\.(py|ts|tsx|js|swift|go|rs|java|kt
 [run-tests]
 description = "Running test suites."
 severity = "low"
-match = [ { kinds = ["shell"], regex = '\b(pytest|unittest|jest|vitest|npm (run )?test|xcodebuild test|go test|cargo test)\b' } ]
+match = [ { kinds = ["shell"], regex = '{cmd}(pytest|jest|vitest|go\s+test|cargo\s+test|swift\s+test)\b|{cmd}(npm|pnpm|yarn|bun)\s+(run\s+)?test\b|\bpython3?\s+-m\s+(unittest|pytest)\b|\bxcodebuild\b.*\btest\b' } ]
 
 [build-and-package]
 description = "Building, installing dependencies, packaging."
 severity = "low"
-match = [ { kinds = ["shell"], regex = '\b(npm (i|install|ci|run build)|pip install|xcodebuild|swift build|make|cargo build|tsc)\b' } ]
+match = [ { kinds = ["shell"], regex = '{cmd}(npm|pnpm|yarn|bun)\s+(i|install|ci|add|run\s+build|build)\b|{cmd}pip3?\s+install\b|{cmd}(xcodebuild|make|tsc|gradle|mvn)\b|{cmd}(swift|cargo|go)\s+build\b' } ]
 
 [version-control]
 description = "Git and GitHub operations."
 severity = "low"
-match = [ { kinds = ["shell"], regex = '^\s*(git|gh)\s' } ]
+match = [ { kinds = ["shell"], regex = '{cmd}(git|gh)\s' } ]
 
 [read-docs]
 description = "Reading documentation or searching the web."

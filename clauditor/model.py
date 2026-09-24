@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum, IntEnum
+from fnmatch import fnmatch
 from pathlib import Path
 import re
 
@@ -77,7 +78,11 @@ class Role:
     drift_threshold: int
 
     def stance_toward(self, capability_name: str) -> Stance:
-        raise NotImplementedError
+        if capability_name in self.forbidden:
+            return Stance.FORBIDDEN
+        if capability_name in self.expected:
+            return Stance.EXPECTED
+        return Stance.TOLERATED
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,7 +99,10 @@ class Policy:
     default_role: str | None
 
     def role_for(self, session: Session) -> Role | None:
-        raise NotImplementedError
+        for assignment in self.assignments:
+            if fnmatch(session.project_cwd, assignment.project_glob):
+                return self.roles[assignment.role_name]
+        return self.roles.get(self.default_role) if self.default_role else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,4 +131,4 @@ class SessionAudit:
 
     @property
     def violations(self) -> tuple[Finding, ...]:
-        raise NotImplementedError
+        return tuple(finding for finding in self.findings if finding.stance is Stance.FORBIDDEN)

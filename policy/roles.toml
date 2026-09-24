@@ -19,3 +19,9 @@ role = "security-engineer"
 [[assign]]
 project = "*"
 role = "software-engineer"
+
+[roles.support-analyst]
+description = "Answers customer tickets and reads logs. Does not change product code."
+expected = ["read-docs"]
+forbidden = ["edit-source", "version-control", "network-scanning", "web-exploitation", "credential-attack", "exploit-development", "privilege-escalation"]
+drift_threshold = 2
