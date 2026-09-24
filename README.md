@@ -1,6 +1,6 @@
-# clauditor
+# clauditor: audit Claude Code, Cursor, and Codex sessions against each operator's role
 
-clauditor checks what your team's coding agents actually did and flags sessions that went outside the person's job. A support analyst whose agent edited product code, or a software engineer whose agent ran `nmap` against a network, shows up at the top of the report with the exact transcript line that caused the flag.
+clauditor is an open-source audit and compliance tool for AI coding agents. It checks what your team's coding agents actually did and flags sessions that went outside the person's job. A support analyst whose agent edited product code, or a software engineer whose agent ran `nmap` against a network, shows up at the top of the report with the exact transcript line that caused the flag.
 
 It reads the transcripts that these agents already save on each laptop:
 
