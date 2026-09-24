@@ -120,12 +120,22 @@ Removed from the base: `alignment_pct`. Verdict plus `drift_points` already rank
 
 Rejected from the other candidate: YAML config (third-party dependency), glob patterns over dotted capability tags in roles (a second matching language for non-programmers), a `Classifier` protocol with an LLM implementation in the POC (surface without a demo that needs it), and a markdown renderer living on the model type.
 
+## Implementation deviations
+
+- `run_scan` takes `only` for the `--only` flag the usage already showed.
+- Catalog regexes use a `{cmd}` token that `policy.py` expands to "start of a command": line start, after `;` `&` `|` `(` backtick `$(`, or after `sudo`/`xargs`/`exec`. Catalog authors write `{cmd}hydra\b`, not `\bhydra\b`.
+- Shell subjects have heredoc bodies stripped in `transcripts.py`. The first real-data scan flagged this very session because heredocs writing regex text like `(nmap|masscan)` read as a pipe into `masscan`. A heredoc body is data unless piped into a shell, and that case is accepted as a miss.
+- A `support-analyst` role was added so the role-relative verdict is provable on the benign coding fixture: the same session is ALIGNED for software-engineer and DRIFTED for support-analyst.
+- `coding_session` runs `npm test` inside a subagent transcript, so subagent folding is tested without the pentest fixture.
+- `fixtures/pentest_session.jsonl` is not in the repo. The implementing agent was stopped by a safety classifier while generating it, and it was not regenerated around that stop. Its three tests are `skipUnless` the file exists, and `demo` prints "fixture missing" for its two cases.
+
 ## Tradeoffs accepted
 
 - We accept missing novel or obfuscated attacks (a renamed binary, a raw-socket Python scanner) in exchange for verdicts that are deterministic, free, offline, unit-testable, and explained by exactly one regex and one line.
 - We accept that prompt matchers will false-positive on discussion ("explain what nmap does") in exchange for catching intent the tools don't reveal. Prompt matchers are few and are where severity should be tuned down first.
 - We accept splitting policy into two files, with roles for non-programmers and the regex catalog for the detection owner, in exchange for roles that are just lists of plain-English names.
 - We accept counting distinct forbidden capabilities rather than occurrences, which undercounts sustained activity in exchange for idempotent, non-gameable scores.
+- We accept false positives when a tool name appears at the start of a line inside a quoted argument (for example `python3 -c "...\nnmap --version"`), in exchange for not writing a shell parser. Measured on 177 real sessions: 1 flag, and it is this class.
 - We accept reading the whole transcript into memory per session, since the POC data is small.
 
 ## Alternatives considered
