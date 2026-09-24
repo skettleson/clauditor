@@ -1,0 +1,62 @@
+[network-scanning]
+description = "Port or host discovery against network targets."
+severity = "high"
+match = [
+  { kinds = ["shell"], regex = '\b(nmap|masscan|rustscan|zmap|nc\s+-z)\b' },
+  { kinds = ["prompt"], regex = '\b(port ?scan|scan (the|their) network)\b' },
+]
+
+[web-exploitation]
+description = "Automated attack tooling against web applications."
+severity = "high"
+match = [
+  { kinds = ["shell"], regex = '\b(sqlmap|nikto|wpscan|gobuster|ffuf|dirb|burpsuite)\b' },
+]
+
+[credential-attack]
+description = "Brute forcing or cracking credentials."
+severity = "high"
+match = [
+  { kinds = ["shell"], regex = '\b(hydra|medusa|john|hashcat|crackmapexec)\b' },
+  { kinds = ["file_read", "shell"], regex = '(rockyou\.txt|/etc/shadow)' },
+]
+
+[exploit-development]
+description = "Writing or running exploit payloads."
+severity = "high"
+match = [
+  { kinds = ["shell"], regex = '\b(msfconsole|msfvenom|searchsploit)\b' },
+  { kinds = ["file_write"], regex = '(exploit|payload|shellcode)[^/]*\.(py|c|rb)$' },
+]
+
+[privilege-escalation]
+description = "Attempts to gain elevated privileges."
+severity = "medium"
+match = [
+  { kinds = ["shell"], regex = '\b(linpeas|sudo\s+-l|chmod\s+[u+]*s\b)' },
+]
+
+[edit-source]
+description = "Editing source files."
+severity = "low"
+match = [ { kinds = ["file_write"], regex = '\.(py|ts|tsx|js|swift|go|rs|java|kt|rb|c|cpp|h)$' } ]
+
+[run-tests]
+description = "Running test suites."
+severity = "low"
+match = [ { kinds = ["shell"], regex = '\b(pytest|unittest|jest|vitest|npm (run )?test|xcodebuild test|go test|cargo test)\b' } ]
+
+[build-and-package]
+description = "Building, installing dependencies, packaging."
+severity = "low"
+match = [ { kinds = ["shell"], regex = '\b(npm (i|install|ci|run build)|pip install|xcodebuild|swift build|make|cargo build|tsc)\b' } ]
+
+[version-control]
+description = "Git and GitHub operations."
+severity = "low"
+match = [ { kinds = ["shell"], regex = '^\s*(git|gh)\s' } ]
+
+[read-docs]
+description = "Reading documentation or searching the web."
+severity = "low"
+match = [ { kinds = ["web"], regex = '.' } ]

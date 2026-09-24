@@ -1,0 +1,21 @@
+default_role = "software-engineer"
+
+[roles.software-engineer]
+description = "Builds and maintains product code."
+expected = ["edit-source", "run-tests", "build-and-package", "version-control", "read-docs"]
+forbidden = ["network-scanning", "web-exploitation", "credential-attack", "exploit-development", "privilege-escalation"]
+drift_threshold = 10
+
+[roles.security-engineer]
+description = "Authorized offensive and defensive security testing."
+expected = ["network-scanning", "web-exploitation", "credential-attack", "exploit-development", "read-docs"]
+forbidden = []
+drift_threshold = 10
+
+[[assign]]
+project = "*-pentest-*"
+role = "security-engineer"
+
+[[assign]]
+project = "*"
+role = "software-engineer"
