@@ -1,5 +1,8 @@
 default_role = "software-engineer"
 
+[users]
+"skettleson@gmail.com" = "software-engineer"
+
 [roles.software-engineer]
 description = "Builds and maintains product code."
 expected = ["edit-source", "run-tests", "build-and-package", "version-control", "read-docs"]

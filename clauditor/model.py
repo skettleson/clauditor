@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, IntEnum
 from fnmatch import fnmatch
-from pathlib import Path
+from pathlib import PurePath
 import re
 
 
@@ -19,7 +19,7 @@ class ActivityKind(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class EvidenceRef:
-    transcript: Path
+    transcript: PurePath
     line_no: int
     event_uuid: str
     timestamp: str
@@ -35,12 +35,25 @@ class Activity:
 
 
 @dataclass(frozen=True, slots=True)
+class Owner:
+    host: str
+    local_user: str
+    email: str | None
+
+    @property
+    def identities(self) -> tuple[str, ...]:
+        return tuple(identity for identity in (self.email, self.local_user) if identity)
+
+
+@dataclass(frozen=True, slots=True)
 class Session:
     session_id: str
     project_cwd: str
     title: str | None
     started_at: str
     activities: tuple[Activity, ...]
+    source: str = "claude-code"
+    owner: Owner | None = None
 
 
 class Severity(IntEnum):
@@ -97,8 +110,12 @@ class Policy:
     roles: dict[str, Role]
     assignments: tuple[Assignment, ...]
     default_role: str | None
+    users: dict[str, str]
 
     def role_for(self, session: Session) -> Role | None:
+        for identity in session.owner.identities if session.owner else ():
+            if identity.lower() in self.users:
+                return self.roles[self.users[identity.lower()]]
         for assignment in self.assignments:
             if fnmatch(session.project_cwd, assignment.project_glob):
                 return self.roles[assignment.role_name]
