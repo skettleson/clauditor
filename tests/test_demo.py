@@ -6,7 +6,7 @@ from pathlib import Path
 from clauditor.audit import audit
 from clauditor.model import Verdict
 from clauditor.policy import PolicyError, load_policy
-from clauditor.transcripts import load_session
+from clauditor.formats.claude_code import load_session
 
 ROOT = Path(__file__).resolve().parent.parent
 POLICY_DIR = ROOT / "policy"

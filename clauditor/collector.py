@@ -9,7 +9,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .model import Owner, Session
-from .transcripts import DEFAULT_PROJECTS_ROOT, load_session, session_transcripts
+from .formats import Roots, TranscriptFormat, default_roots, discover
 from .wire import encode_batch
 
 DEFAULT_STATE_FILE = Path.home() / ".clauditor" / "collector-state.json"
@@ -38,16 +38,16 @@ def local_owner(account_file: Path = CLAUDE_ACCOUNT_FILE) -> Owner:
     return Owner(host=socket.gethostname(), local_user=getpass.getuser(), email=email)
 
 
-def collect(server: str, token: str | None, root: Path = DEFAULT_PROJECTS_ROOT, state_file: Path = DEFAULT_STATE_FILE, owner: Owner | None = None) -> CollectResult:
+def collect(server: str, token: str | None, roots: Roots | None = None, state_file: Path = DEFAULT_STATE_FILE, owner: Owner | None = None) -> CollectResult:
     owner = owner or local_owner()
     shipped_fingerprints = _read_state(state_file)
-    pending = [(t, fp) for t in session_transcripts(root) if shipped_fingerprints.get(str(t)) != (fp := _fingerprint(t))]
-    unchanged = sum(1 for _ in session_transcripts(root)) - len(pending)
+    found = discover(roots or default_roots())
+    pending = [(f, t, fp) for f, t in found if shipped_fingerprints.get(str(t)) != (fp := _fingerprint(f, t))]
     shipped = failed = 0
     last_error = None
     for start in range(0, len(pending), BATCH_SIZE):
         batch = pending[start : start + BATCH_SIZE]
-        sessions = [replace(load_session(transcript), owner=owner) for transcript, _ in batch]
+        sessions = [replace(transcript_format.load_session(transcript), owner=owner) for transcript_format, transcript, _ in batch]
         try:
             ship(server, token, owner, sessions)
         except ShipError as error:
@@ -55,9 +55,9 @@ def collect(server: str, token: str | None, root: Path = DEFAULT_PROJECTS_ROOT, 
             last_error = str(error)
             continue
         shipped += len(batch)
-        shipped_fingerprints.update({str(transcript): fp for transcript, fp in batch})
+        shipped_fingerprints.update({str(transcript): fp for _, transcript, fp in batch})
         _write_state(state_file, shipped_fingerprints)
-    return CollectResult(shipped, unchanged, failed, last_error)
+    return CollectResult(shipped, len(found) - len(pending), failed, last_error)
 
 
 def ship(server: str, token: str | None, owner: Owner, sessions: list[Session]) -> None:
@@ -77,8 +77,8 @@ def ship(server: str, token: str | None, owner: Owner, sessions: list[Session]) 
         raise ShipError(str(error)) from error
 
 
-def _fingerprint(transcript: Path) -> str:
-    files = [transcript, *sorted((transcript.parent / transcript.stem / "subagents").glob("*.jsonl"))]
+def _fingerprint(transcript_format: TranscriptFormat, transcript: Path) -> str:
+    files = [transcript, *transcript_format.companions(transcript)]
     return ";".join(f"{f.name}:{f.stat().st_size}:{f.stat().st_mtime_ns}" for f in files)
 
 

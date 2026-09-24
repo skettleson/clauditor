@@ -79,13 +79,13 @@ Module map, in `sketch/clauditor/`, with one call chain `__main__ -> audit -> mo
 | module | owns |
 |---|---|
 | `model.py` | all domain types, no I/O |
-| `transcripts.py` | JSONL knowledge: event types, content blocks, tool-name to kind mapping, subagent folding |
+| `formats/` | Transcript knowledge, one module per agent (`claude_code.py`, `cursor.py`, `codex.py`), each with a tool-name to `ToolSpec(kind, subject)` table. `formats/__init__.py` holds the `FORMATS` registry keyed by source name. |
 | `policy.py` | TOML parsing and cross-validation of roles against the catalog |
 | `audit.py` | pure classification and scoring |
 | `report.py` | text, markdown and json rendering |
 | `__main__.py` | argparse, `scan`, `demo` |
 
-**Activity** is the unit of evidence: one human prompt or one `tool_use` block, normalized to `(kind, tool_name, subject, evidence)`. `kind` is a closed enum (`prompt, shell, file_read, file_write, web, mcp, tool`). `subject` is the one string worth matching for that kind: the Bash `command`, the `file_path`, the URL or search query, the MCP tool name plus serialized input, or the prompt text. `EvidenceRef` holds the transcript path, 1-based line number, event uuid, timestamp and subagent id. It is the single source of truth for "where did this happen", and the report quotes only from it. Tool results, thinking and assistant prose are dropped because they are what the model said, not what the session did. Wire JSON never leaves `transcripts.py`, per boundary-discipline.
+**Activity** is the unit of evidence: one human prompt or one `tool_use` block, normalized to `(kind, tool_name, subject, evidence)`. `kind` is a closed enum (`prompt, shell, file_read, file_write, web, mcp, tool`). `subject` is the one string worth matching for that kind: the Bash `command`, the `file_path`, the URL or search query, the MCP tool name plus serialized input, or the prompt text. `EvidenceRef` holds the transcript path, 1-based line number, event uuid, timestamp and subagent id. It is the single source of truth for "where did this happen", and the report quotes only from it. Tool results, thinking and assistant prose are dropped because they are what the model said, not what the session did. Wire JSON never leaves `formats/`, per boundary-discipline.
 
 **Session** is one top-level transcript with its subagent transcripts folded in, ordered by timestamp. The `isSidechain`/subagent origin is kept on each activity's evidence, not as a separate session, because the operator owns the whole tree.
 
@@ -124,11 +124,16 @@ Rejected from the other candidate: YAML config (third-party dependency), glob pa
 
 - `run_scan` takes `only` for the `--only` flag the usage already showed.
 - Catalog regexes use a `{cmd}` token that `policy.py` expands to "start of a command": line start, after `;` `&` `|` `(` backtick `$(`, or after `sudo`/`xargs`/`exec`. Catalog authors write `{cmd}hydra\b`, not `\bhydra\b`.
-- Shell subjects have heredoc bodies stripped in `transcripts.py`. The first real-data scan flagged this very session because heredocs writing regex text like `(nmap|masscan)` read as a pipe into `masscan`. A heredoc body is data unless piped into a shell, and that case is accepted as a miss.
+- Shell subjects have heredoc bodies stripped in `formats/common.py`. The first real-data scan flagged this very session because heredocs writing regex text like `(nmap|masscan)` read as a pipe into `masscan`. A heredoc body is data unless piped into a shell, and that case is accepted as a miss.
 - A `support-analyst` role was added so the role-relative verdict is provable on the benign coding fixture: the same session is ALIGNED for software-engineer and DRIFTED for support-analyst.
 - `coding_session` runs `npm test` inside a subagent transcript, so subagent folding is tested without the pentest fixture.
 - A session's id is its transcript file name, not the `sessionId` inside it. A forked session gets its own file but keeps the parent's `sessionId` on every line, so keying by `sessionId` made the server overwrite one with the other. On real data this changed the id of 1 transcript in 181, the fork, because every other file is named after its own `sessionId`.
 - `fixtures/pentest_session.jsonl` is not in the repo. The implementing agent was stopped by a safety classifier while generating it, and it was not regenerated around that stop. Its three tests are `skipUnless` the file exists, and `demo` prints "fixture missing" for its two cases.
+
+- Cursor and Codex were added as two more `TranscriptFormat` entries, not as branches in one parser. Each format maps its own tool names onto the shared `ActivityKind` set through a `ToolSpec` table, so the capability catalog and every role apply to all three agents unchanged. Cursor's `CallMcpTool` and Codex's `mcp__server__tool` calls are normalized to Claude's `mcp__server__tool` subject. Freeform `apply_patch` and `ApplyPatch` edits become file writes whose subject is the patched paths.
+- Session source names are `claude-code`, `cursor` and `codex`. The store and wire format already keyed sessions by source, so neither changed.
+- The Codex parser follows `ResponseItem` and `SessionMeta` in `codex-rs/protocol`. Human prompts come from `event_msg.user_message`, because the `response_item` user messages also carry the injected `<environment_context>`. Codex session ids are the thread uuid at the end of the rollout file name, which keeps the rule that a session is keyed by its file.
+- The server answers MCP at `POST /mcp` through the same `respond` function as stdio, for clients that connect only to a URL. It sends one JSON response per request and never opens a server-push stream. ChatGPT developer-mode connectors need OAuth, which the server does not implement.
 
 ## Tradeoffs accepted
 

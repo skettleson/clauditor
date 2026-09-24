@@ -6,23 +6,23 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from pathlib import Path
 from typing import IO, Protocol
 
+from .formats import Roots, load_sessions
 from .model import Policy
+from .query import AuditQuery, QueryError, report
 from .report import render_roles
-from .server import AuditQuery, QueryError, report
-from .transcripts import load_sessions
 
 SERVER_NAME = "clauditor"
-SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
+SUPPORTED_PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 METHOD_NOT_FOUND = -32601
 PARSE_ERROR = -32700
+INVALID_REQUEST = -32600
 
 TOOLS = [
     {
         "name": "audit_sessions",
-        "description": "Audit Claude Code sessions against each operator's role. Returns drifted and review sessions first, and cites the transcript file, line and event uuid behind every forbidden finding.",
+        "description": "Audit Claude Code, Cursor and Codex agent sessions against each operator's role. Returns drifted and review sessions first, and cites the transcript file, line and event uuid behind every forbidden finding.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -78,7 +78,7 @@ class RemoteSource:
 
 @dataclass(frozen=True, slots=True)
 class LocalSource:
-    root: Path
+    roots: Roots
     policy: Policy
 
     def audit(self, raw: dict) -> str:
@@ -88,7 +88,7 @@ class LocalSource:
             raise SourceError(str(error)) from error
         if query.user:
             raise SourceError("user filter needs the central server, local transcripts have one operator")
-        sessions = (s for s in load_sessions(self.root, query.session) if not query.since or s.started_at >= query.since)
+        sessions = (s for s in load_sessions(self.roots, query.session) if not query.since or s.started_at >= query.since)
         return report(sessions, self.policy, query)
 
     def roles(self) -> str:
@@ -104,8 +104,16 @@ def serve_stdio(source: Source, stdin: IO[str] = sys.stdin, stdout: IO[str] = sy
         except json.JSONDecodeError as error:
             _write(stdout, {"jsonrpc": "2.0", "id": None, "error": {"code": PARSE_ERROR, "message": str(error)}})
             continue
-        if isinstance(message, dict) and "id" in message:
-            _write(stdout, {"jsonrpc": "2.0", "id": message["id"]} | handle(source, message.get("method"), message.get("params") or {}))
+        if (reply := respond(source, message)) is not None:
+            _write(stdout, reply)
+
+
+def respond(source: Source, message: object) -> dict | None:
+    if not isinstance(message, dict):
+        return {"jsonrpc": "2.0", "id": None, "error": {"code": INVALID_REQUEST, "message": "expected one JSON-RPC object"}}
+    if "id" not in message:
+        return None
+    return {"jsonrpc": "2.0", "id": message["id"]} | handle(source, message.get("method"), message.get("params") or {})
 
 
 def handle(source: Source, method: object, params: dict) -> dict:

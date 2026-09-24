@@ -42,7 +42,7 @@ def _text(audit: SessionAudit) -> str:
 
 
 def _markdown(audit: SessionAudit) -> str:
-    lines = [f"## {audit.verdict.value.upper()}: {audit.session.title or audit.session.session_id}", "", f"- session `{audit.session.session_id}`, role `{_role_name(audit)}`, drift {audit.drift_points}", f"- project `{audit.session.project_cwd}`, started {audit.session.started_at}", f"- in-role: {_in_role_summary(audit)}", ""]
+    lines = [f"## {audit.verdict.value.upper()}: {audit.session.title or audit.session.session_id}", "", f"- {audit.session.source} session `{audit.session.session_id}`, role `{_role_name(audit)}`, drift {audit.drift_points}", f"- project `{audit.session.project_cwd}`, started {audit.session.started_at}", f"- in-role: {_in_role_summary(audit)}", ""]
     if audit.violations:
         lines += ["| capability | severity | activity | evidence |", "|---|---|---|---|"]
         lines += [f"| {f.capability.name} | {f.capability.severity.name.lower()} | `{_subject(f).replace('|', '\\|')}` | `{_cite(f)}` |" for f in audit.violations]
@@ -53,6 +53,7 @@ def _markdown(audit: SessionAudit) -> str:
 def _as_json(audit: SessionAudit) -> dict:
     return {
         "session_id": audit.session.session_id,
+        "source": audit.session.source,
         "title": audit.session.title,
         "project": audit.session.project_cwd,
         "started_at": audit.session.started_at,
@@ -79,7 +80,7 @@ def _as_json(audit: SessionAudit) -> dict:
 
 def _headline(audit: SessionAudit) -> str:
     title = f'"{audit.session.title}"' if audit.session.title else ""
-    return f"{audit.verdict.value.upper():<10} drift {audit.drift_points:<3} {_role_name(audit)}  {title}  {audit.session.session_id[:8]}"
+    return f"{audit.verdict.value.upper():<10} drift {audit.drift_points:<3} {_role_name(audit)}  {title}  {audit.session.source} {audit.session.session_id[:8]}"
 
 
 def _role_name(audit: SessionAudit) -> str:
@@ -98,7 +99,8 @@ def _subject(finding: Finding) -> str:
 def _cite(finding: Finding) -> str:
     evidence = finding.activity.evidence
     subagent = f"  subagent {evidence.subagent_id}" if evidence.subagent_id else ""
-    return f"{evidence.transcript.name}:{evidence.line_no} uuid {evidence.event_uuid[:8]}{subagent}"
+    uuid = f" uuid {evidence.event_uuid[:8]}" if evidence.event_uuid else ""
+    return f"{evidence.transcript.name}:{evidence.line_no}{uuid}{subagent}"
 
 
 def _in_role_summary(audit: SessionAudit) -> str:
