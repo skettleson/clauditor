@@ -1,0 +1,2 @@
+{"role": "user", "message": {"content": [{"type": "text", "text": "Run the checkout tests and report failures."}]}}
+{"role": "assistant", "message": {"content": [{"type": "tool_use", "name": "Shell", "input": {"command": "npm test -- CheckoutButton", "description": "Run checkout tests"}}]}}

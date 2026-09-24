@@ -1,6 +1,14 @@
 # clauditor
 
-clauditor audits Claude Code sessions against the operator's job function. It reads the transcripts in `~/.claude/projects`, classifies every prompt and tool call against a capability catalog, and flags sessions that did work the operator's role forbids. Every flag cites the transcript file, line number, and event uuid, so a reviewer can open the exact line.
+clauditor audits coding-agent sessions against the operator's job function. It reads the local transcripts of three agents:
+
+| source | agent | transcripts |
+|---|---|---|
+| `claude-code` | Claude Code | `~/.claude/projects/*/*.jsonl` |
+| `cursor` | Cursor's agent, in the IDE and in `cursor-agent` | `~/.cursor/projects/*/agent-transcripts/<id>/<id>.jsonl` |
+| `codex` | Codex, OpenAI's coding agent, in ChatGPT, the Codex app and the Codex CLI | `~/.codex/sessions/**/rollout-*.jsonl`, or under `$CODEX_HOME` |
+
+It classifies every prompt and tool call against one capability catalog and flags sessions that did work the operator's role forbids. Every flag cites the transcript file and line number, plus the event uuid or tool call id where the agent records one, so a reviewer can open the exact line.
 
 It runs on the Python 3.12+ standard library. It has no dependencies and makes no LLM calls.
 
@@ -11,11 +19,12 @@ python3 -m clauditor demo
 python3 -m clauditor scan
 python3 -m clauditor scan --role software-engineer --format markdown > audit.md
 python3 -m clauditor scan --only 097b1cbb --show-aligned
+python3 -m clauditor scan --source cursor --source codex
 python3 -m clauditor scan --fail-on-drift
 python3 -m unittest -v
 ```
 
-`scan` exits 1 with `--fail-on-drift` when any session is `drifted`, so you can use it in CI.
+`scan` reads every source by default. `--source` limits it to the named agents, and `--claude-code-root`, `--cursor-root` and `--codex-root` point a source at another directory. `scan` exits 1 with `--fail-on-drift` when any session is `drifted`, so you can use it in CI.
 
 Roles live in `policy/roles.toml` and name capabilities only. Detection regexes live in `policy/capabilities.toml`. A role that names an unknown capability fails at load. For the design and its tradeoffs, see `docs/DESIGN.md`.
 
@@ -23,11 +32,11 @@ Roles live in `policy/roles.toml` and name capabilities only. Detection regexes 
 
 A team deployment has three parts:
 
-- The **collector** (`clauditor collect`) runs on each laptop on a timer. It parses new or changed transcripts locally and posts them to the server as normalized activities. Raw JSONL never leaves the laptop. Tool results, thinking, and assistant prose are dropped. Only prompts and tool-call subjects are sent, and each subject is capped at 20,000 characters.
+- The **collector** (`clauditor collect`) runs on each laptop on a timer. It parses new or changed Claude Code, Cursor and Codex transcripts locally and posts them to the server as normalized activities. Raw JSONL never leaves the laptop. Tool results, thinking, and assistant prose are dropped. Only prompts and tool-call subjects are sent, and each subject is capped at 20,000 characters.
 - The **server** (`clauditor serve`) stores the activities in SQLite and audits them on request against the policy it loaded at startup.
-- The **MCP server** (`clauditor mcp`) runs on a reviewer's machine and gives their Claude Code two tools, `audit_sessions` and `list_roles`. It calls the server over HTTP. Without `--server`, it audits the local `~/.claude/projects` instead.
+- The **MCP server** gives a reviewer's agent two tools, `audit_sessions` and `list_roles`. It runs two ways. `clauditor mcp` runs on the reviewer's machine over stdio for Claude Code, Cursor and Codex, and calls the server over HTTP. Without `--server`, it audits the local transcripts instead. The server also answers MCP itself at `POST /mcp` (Streamable HTTP), for clients that connect only to a URL.
 
-The collector identifies the operator by the email in `~/.claude.json` (`oauthAccount.emailAddress`) and by the local username. The server resolves each session's role in this order: the `[users]` table in `policy/roles.toml`, then the `[[assign]]` project globs, then `default_role`.
+The collector identifies the operator by the email in `~/.claude.json` (`oauthAccount.emailAddress`) and by the local username. An operator who uses only Cursor or Codex has no `~/.claude.json`, so map their local username under `[users]`. The server resolves each session's role in this order: the `[users]` table in `policy/roles.toml`, then the `[[assign]]` project globs, then `default_role`.
 
 Two separate bearer tokens protect the server. Collectors hold `CLAUDITOR_INGEST_TOKEN` and can only write. Reviewers hold `CLAUDITOR_READ_TOKEN` and can read every audit. The server refuses to start if the tokens are equal.
 
@@ -159,9 +168,13 @@ The collector needs a clone of this repo, `python3` 3.12 or later, the server UR
 
 `collect` exits 1 when any batch failed, and it writes the last server error to stderr, for example `clauditor: last ship error: 401 unauthorized`. Failed transcripts stay pending and retry on the next run.
 
-## Connect a reviewer's Claude Code
+## Connect a reviewer's agent
 
-Register the MCP server with Claude Code. Point `PYTHONPATH` at the clone so `python3 -m clauditor` resolves from any directory.
+Each client below gets the same two tools. Then ask things like "which sessions drifted this week" or "audit alice@example.com's sessions since 2026-09-01". The `user` filter works only against the server.
+
+There are two ways to connect. The stdio way runs `python3 -m clauditor mcp` from a clone on the reviewer's machine. Point `PYTHONPATH` at the clone so the module resolves from any directory. To audit only the reviewer's own machine, leave out `CLAUDITOR_SERVER` and the token. The URL way connects straight to `https://clauditor.example.com/mcp` with the read token as a bearer header, and needs no clone.
+
+### Claude Code
 
 ```
 claude mcp add clauditor \
@@ -171,7 +184,47 @@ claude mcp add clauditor \
 	-- python3 -m clauditor mcp
 ```
 
-Then ask Claude things like "which sessions drifted this week" or "audit alice@example.com's sessions since 2026-09-01". To audit only your own machine, leave out `CLAUDITOR_SERVER` and the token. The `user` filter works only against the server.
+For the URL way, run `claude mcp add --transport http clauditor https://clauditor.example.com/mcp --header "Authorization: Bearer <read token>"`.
+
+### Cursor
+
+Add this to `~/.cursor/mcp.json`, or to `.cursor/mcp.json` in one project. The IDE and `cursor-agent` both read it.
+
+```json
+{
+  "mcpServers": {
+    "clauditor": {
+      "command": "python3",
+      "args": ["-m", "clauditor", "mcp"],
+      "env": {
+        "PYTHONPATH": "/Users/YOU/clauditor",
+        "CLAUDITOR_SERVER": "https://clauditor.example.com",
+        "CLAUDITOR_READ_TOKEN": "<read token>"
+      }
+    }
+  }
+}
+```
+
+For the URL way, replace the entry with `{"url": "https://clauditor.example.com/mcp", "headers": {"Authorization": "Bearer <read token>"}}`. Run `cursor-agent mcp list-tools clauditor` to confirm that Cursor sees both tools.
+
+### Codex (the Codex CLI, the Codex app and Codex in ChatGPT)
+
+```
+codex mcp add clauditor \
+	--env PYTHONPATH=$HOME/clauditor \
+	--env CLAUDITOR_SERVER=https://clauditor.example.com \
+	--env CLAUDITOR_READ_TOKEN=<read token> \
+	-- python3 -m clauditor mcp
+```
+
+For the URL way, export `CLAUDITOR_READ_TOKEN` and run `codex mcp add clauditor --url https://clauditor.example.com/mcp --bearer-token-env-var CLAUDITOR_READ_TOKEN`. Both commands write `[mcp_servers.clauditor]` to `~/.codex/config.toml`.
+
+### ChatGPT connectors and the OpenAI API
+
+A ChatGPT developer-mode connector reaches MCP servers only by URL, and it authenticates with OAuth or with nothing. It cannot send a static bearer token, so it cannot use the read token. clauditor does not implement OAuth. Do not expose `/mcp` without a token to get around this, because every audit would become public.
+
+A program on the OpenAI Responses API or the Agents SDK can send headers, so it can use the URL way with `Authorization: Bearer <read token>`.
 
 ## Reference
 
@@ -179,13 +232,13 @@ Then ask Claude things like "which sessions drifted this week" or "audit alice@e
 
 | command | does |
 |---|---|
-| `scan` | Audits local transcripts and prints a report. Takes `--root`, `--role`, `--only`, `--format text\|markdown\|json`, `--show-aligned`, and `--fail-on-drift`. |
+| `scan` | Audits local transcripts and prints a report. Takes the source options, `--role`, `--only`, `--format text\|markdown\|json`, `--show-aligned`, and `--fail-on-drift`. |
 | `demo` | Audits the bundled fixtures against several roles. |
-| `collect` | Ships new or changed local transcripts to `--server`. Takes `--root` and `--state-file`. |
+| `collect` | Ships new or changed local transcripts to `--server`. Takes the source options and `--state-file`. |
 | `serve` | Runs the HTTP server. Takes `--host` (default `127.0.0.1`), `--port` (default `8750`), `--db` (default `./clauditor.db`), and `--no-auth` for local testing. |
-| `mcp` | Runs the MCP server on stdio. Takes `--server` or `--root`. |
+| `mcp` | Runs the MCP server on stdio. Takes `--server`, or the source options to audit local transcripts. |
 
-Every command takes `--policy-dir` before the subcommand, for example `python3 -m clauditor --policy-dir /etc/clauditor/policy serve`.
+The source options are `--source claude-code|cursor|codex`, which can repeat and defaults to all three, and `--claude-code-root`, `--cursor-root` and `--codex-root`. Every command takes `--policy-dir` before the subcommand, for example `python3 -m clauditor --policy-dir /etc/clauditor/policy serve`.
 
 ### Environment variables
 
@@ -193,7 +246,8 @@ Every command takes `--policy-dir` before the subcommand, for example `python3 -
 |---|---|---|
 | `CLAUDITOR_SERVER` | `collect`, `mcp` | Server base URL. `--server` overrides it. |
 | `CLAUDITOR_INGEST_TOKEN` | `collect`, `serve` | Bearer token for `POST /v1/ingest`. |
-| `CLAUDITOR_READ_TOKEN` | `mcp`, `serve` | Bearer token for `GET /v1/audit` and `GET /v1/roles`. |
+| `CLAUDITOR_READ_TOKEN` | `mcp`, `serve` | Bearer token for `GET /v1/audit`, `GET /v1/roles` and `POST /mcp`. |
+| `CODEX_HOME` | `scan`, `collect`, `mcp` | Codex's home directory. The default Codex root is `$CODEX_HOME/sessions`, or `~/.codex/sessions`. |
 
 ### HTTP API
 
@@ -203,11 +257,18 @@ Every command takes `--policy-dir` before the subcommand, for example `python3 -
 | `POST /v1/ingest` | ingest | `{"stored": N}`. The body is a schema-1 batch from `clauditor/wire.py`, at most 64 MiB. A session with the same host, source, and session id replaces the stored one. |
 | `GET /v1/audit` | read | The report. Query parameters are `user` (email or local username), `since` (ISO 8601 start time), `session` (id prefix), `role` (override), `format` (`json` by default, or `text` or `markdown`), and `show_aligned=1`. |
 | `GET /v1/roles` | read | Roles, their expected and forbidden capabilities, and the `[users]` map, as JSON. |
+| `POST /mcp` | read | MCP over Streamable HTTP, with the same tools as `clauditor mcp`. It answers each JSON-RPC request with one JSON response and each notification with 202. `GET /mcp` returns 405 because the server never pushes messages. |
 
-A missing or wrong token returns 401. A malformed batch, an unknown role, or an unknown format returns 400 with the reason in the body.
+A missing or wrong token returns 401 with `WWW-Authenticate: Bearer`. A malformed batch, an unknown role, or an unknown format returns 400 with the reason in the body.
 
 ## Know what it sends and what it misses
 
 Prompts and shell commands can contain secrets that an operator pasted into a session. The collector sends them to the server as they are. Treat the database and the read token as sensitive as the transcripts themselves.
 
 Detection is regex-based. It misses renamed binaries and hand-written scanners, and it can flag a tool name that appears at the start of a line inside a quoted argument. `docs/DESIGN.md` lists the accepted tradeoffs.
+
+Each agent records less than Claude Code in some places:
+
+- Cursor writes no timestamp, uuid or working directory on transcript lines. clauditor takes each turn's time from the `<timestamp>` Cursor puts in the prompt, and a subagent's time from its file's creation time. It rebuilds the project path from the project folder name by matching it against the local disk. Cursor citations have a line number and no uuid.
+- A Codex subagent writes its own rollout file. clauditor audits it as its own session titled `subagent of <parent id>`, instead of folding it into the parent the way it does for Claude Code and Cursor.
+- ChatGPT conversations outside Codex live on OpenAI's servers, not on the laptop, so the collector cannot read them.

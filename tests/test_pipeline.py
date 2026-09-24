@@ -43,7 +43,7 @@ class ServerTest(unittest.TestCase):
         self.url = f"http://127.0.0.1:{self.server.server_port}"
 
     def collect(self, token: str = INGEST) -> CollectResult:
-        return collect(self.url, token, self.projects, self.tmp / "state.json", OWNER)
+        return collect(self.url, token, {"claude-code": self.projects}, self.tmp / "state.json", OWNER)
 
     def get(self, path: str, token: str | None = READ) -> tuple[int, str]:
         request = urllib.request.Request(self.url + path, headers={"authorization": f"Bearer {token}"} if token else {})
@@ -102,6 +102,47 @@ class ServerTest(unittest.TestCase):
     def test_unknown_role_is_a_400(self) -> None:
         self.assertEqual(self.get("/v1/audit?role=astronaut")[0], 400)
 
+    def test_collector_ships_cursor_and_codex_sessions_tagged_with_their_source(self) -> None:
+        roots = {"claude-code": self.projects, "cursor": FIXTURES / "cursor", "codex": FIXTURES / "codex"}
+        self.assertEqual(collect(self.url, INGEST, roots, self.tmp / "state.json", OWNER), CollectResult(shipped=4, unchanged=0, failed=0))
+        self.assertEqual(collect(self.url, INGEST, roots, self.tmp / "state.json", OWNER), CollectResult(shipped=0, unchanged=4, failed=0))
+        sessions = json.loads(self.get("/v1/audit?role=support-analyst&show_aligned=1")[1])["sessions"]
+        self.assertEqual(
+            sorted((s["source"], s["session_id"], s["verdict"]) for s in sessions),
+            [
+                ("claude-code", CODING_ID, "drifted"),
+                ("codex", "c0de2222-1111-4222-8333-444455556666", "drifted"),
+                ("codex", "c0de3333-1111-4222-8333-444455556666", "aligned"),
+                ("cursor", "c0de1111-1111-4222-8333-444455556666", "drifted"),
+            ],
+        )
+
+    def test_mcp_over_streamable_http_serves_the_same_tools(self) -> None:
+        self.collect()
+        initialize = {"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "test", "version": "0"}}}
+        status, _, body = self.post_mcp(initialize)
+        self.assertEqual((status, json.loads(body)["result"]["protocolVersion"]), (200, "2025-11-25"))
+        self.assertEqual(self.post_mcp({"jsonrpc": "2.0", "method": "notifications/initialized"})[:3:2], (202, ""))
+        call = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "audit_sessions", "arguments": {"role": "support-analyst", "format": "json"}}}
+        status, _, body = self.post_mcp(call)
+        [session] = json.loads(json.loads(body)["result"]["content"][0]["text"])["sessions"]
+        self.assertEqual((status, session["session_id"], session["verdict"]), (200, CODING_ID, "drifted"))
+
+    def test_mcp_over_http_needs_the_read_token_and_rejects_get(self) -> None:
+        status, headers, _ = self.post_mcp({"jsonrpc": "2.0", "id": 0, "method": "ping"}, token=INGEST)
+        self.assertEqual((status, headers.get("www-authenticate")), (401, 'Bearer realm="clauditor"'))
+        self.assertEqual(self.get("/mcp")[0], 405)
+
+    def post_mcp(self, message: dict, token: str = READ) -> tuple[int, dict, str]:
+        headers = {"authorization": f"Bearer {token}", "content-type": "application/json", "accept": "application/json, text/event-stream"}
+        request = urllib.request.Request(self.url + "/mcp", data=json.dumps(message).encode(), headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(request) as response:
+                return response.status, dict(response.headers), response.read().decode()
+        except urllib.error.HTTPError as error:
+            with error:
+                return error.code, {k.lower(): v for k, v in error.headers.items()}, error.read().decode()
+
     def test_mcp_answers_through_the_server(self) -> None:
         self.collect()
         replies = run_mcp(["--server", self.url], {"CLAUDITOR_READ_TOKEN": READ}, [("tools/call", {"name": "audit_sessions", "arguments": {"role": "support-analyst"}})])
@@ -115,7 +156,7 @@ class LocalMcpTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_projects_root(Path(tmp))
             replies = run_mcp(
-                ["--root", str(root)],
+                ["--source", "claude-code", "--claude-code-root", str(root)],
                 {},
                 [
                     ("tools/list", {}),
