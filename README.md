@@ -315,3 +315,7 @@ Each agent records less than Claude Code in some places:
 - Cursor writes no timestamp, uuid or working directory on transcript lines. clauditor takes each turn's time from the `<timestamp>` Cursor puts in the prompt, and a subagent's time from its file's creation time. It rebuilds the project path from the project folder name by matching it against the local disk. Cursor citations have a line number and no uuid.
 - A Codex subagent writes its own rollout file. clauditor audits it as its own session titled `subagent of <parent id>`, instead of folding it into the parent the way it does for Claude Code and Cursor.
 - ChatGPT conversations outside Codex live on OpenAI's servers, not on the laptop, so the collector cannot read them.
+
+## License
+
+clauditor is released under the MIT License. See `LICENSE`.
