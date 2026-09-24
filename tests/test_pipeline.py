@@ -19,7 +19,7 @@ FIXTURES = ROOT / "fixtures"
 POLICY = load_policy(ROOT / "policy" / "capabilities.toml", ROOT / "policy" / "roles.toml")
 INGEST, READ = "ingest-secret", "read-secret"
 OWNER = Owner("laptop-1", "dev", "skettleson@gmail.com")
-CODING_ID = "c0de0000-1111-4222-8333-444455556666"
+CODING_ID = "coding_session"
 
 
 def make_projects_root(tmp: Path) -> Path:
@@ -80,6 +80,12 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.collect(), CollectResult(shipped=1, unchanged=0, failed=0))
         [session] = json.loads(self.get("/v1/audit")[1])["sessions"]
         self.assertEqual([(v["capability"], v["subject"]) for v in session["violations"]], [("network-scanning", "nmap -sV 10.0.0.1")])
+
+    def test_forked_transcript_sharing_a_session_id_is_stored_as_its_own_session(self) -> None:
+        shutil.copy(self.projects / "-Users-dev-code-acme-web" / "coding_session.jsonl", self.projects / "-Users-dev-code-acme-web" / "f0f0f0f0-fork.jsonl")
+        self.assertEqual(self.collect(), CollectResult(shipped=2, unchanged=0, failed=0))
+        sessions = json.loads(self.get("/v1/audit?show_aligned=1")[1])["sessions"]
+        self.assertEqual(sorted(s["session_id"] for s in sessions), ["coding_session", "f0f0f0f0-fork"])
 
     def test_ingest_rejects_the_read_token_and_audit_rejects_the_ingest_token(self) -> None:
         self.assertEqual(self.collect(token=READ), CollectResult(shipped=0, unchanged=0, failed=1, last_error="401 unauthorized"))

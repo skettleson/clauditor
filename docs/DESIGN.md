@@ -127,6 +127,7 @@ Rejected from the other candidate: YAML config (third-party dependency), glob pa
 - Shell subjects have heredoc bodies stripped in `transcripts.py`. The first real-data scan flagged this very session because heredocs writing regex text like `(nmap|masscan)` read as a pipe into `masscan`. A heredoc body is data unless piped into a shell, and that case is accepted as a miss.
 - A `support-analyst` role was added so the role-relative verdict is provable on the benign coding fixture: the same session is ALIGNED for software-engineer and DRIFTED for support-analyst.
 - `coding_session` runs `npm test` inside a subagent transcript, so subagent folding is tested without the pentest fixture.
+- A session's id is its transcript file name, not the `sessionId` inside it. A forked session gets its own file but keeps the parent's `sessionId` on every line, so keying by `sessionId` made the server overwrite one with the other. On real data this changed the id of 1 transcript in 181, the fork, because every other file is named after its own `sessionId`.
 - `fixtures/pentest_session.jsonl` is not in the repo. The implementing agent was stopped by a safety classifier while generating it, and it was not regenerated around that stop. Its three tests are `skipUnless` the file exists, and `demo` prints "fixture missing" for its two cases.
 
 ## Tradeoffs accepted

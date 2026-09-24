@@ -68,7 +68,7 @@ def load_session(transcript: Path) -> Session:
         )
     activities.sort(key=lambda a: (a.evidence.timestamp, str(a.evidence.transcript), a.evidence.line_no))
     return Session(
-        session_id=_first_field(events, "sessionId") or transcript.stem,
+        session_id=transcript.stem,
         project_cwd=_first_field(events, "cwd") or "",
         title=_last_title(events),
         started_at=_first_field(events, "timestamp") or "",
